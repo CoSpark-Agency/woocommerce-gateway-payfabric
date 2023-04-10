@@ -193,9 +193,22 @@ class PayFabric_Gateway_Request
         $order_id = $result->TrxUserDefine1;
         $order = wc_get_order($order_id);
         $order_status = $order->get_status();
+
+        // Set the WooCommerce AntiFraud scores
+        if (class_exists( 'WC_AF_Score_Helper' )) {
+            $score_points = get_post_meta( $order_id, 'wc_af_score', true );
+            $score_points = WC_AF_Score_Helper::invert_score( $score_points );
+            $hold_points = get_option( 'wc_settings_anti_fraud_hold_score' );
+        } else {
+            // The WooCommerce AntiFraud plugin is disabled or doesn't exist
+            $score_points = 0;
+            $hold_points = 0;
+        }
+
         if ($status == "approved") {
             if ($transactionState == "pending capture") {
-                if ($order_status != 'processing') {
+                //  Only update Order statuses to processing if they pass the fraud check
+                if ($order_status != 'processing' && ($hold_points == 0 || ($hold_points > 0 && $score_points < $hold_points))) {
                     //Auth transaction
                     update_post_meta($order->get_id(), '_payment_status', 'processing');
                     $order->update_status('processing', sprintf(__('Card payment authorized.', 'payfabric-gateway-woocommerce')));
